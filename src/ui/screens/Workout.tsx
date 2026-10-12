@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LOAD_TYPE_LABEL, getExercise } from '../../domain/exercises/catalog'
-import { fmt, fmtDate, fmtDuration, fmtKg, groupText } from '../../domain/format'
+import { fmt, fmtDate, fmtDuration, fmtKg, parseNum } from '../../domain/format'
 import { HIDDEN_IN_PICKER, getSlot, weekLabel } from '../../domain/program/definition'
 import type { PlannedGroup, PlannedSession } from '../../domain/program/engine'
 import { describeActual, lastResult } from '../../domain/progression/workout'
@@ -8,9 +8,10 @@ import {
   completeSet, finishWorkout, saveWorkout, setChoice, startWorkout, syncActiveWorkout, updateSet,
 } from '../../storage/repo'
 import type { WorkoutExercise, WorkoutRow, WorkoutSet } from '../../storage/types'
-import { ConfirmSheet, Icon, NumberField, RpeSheet, Sheet, Stepper, useToast } from '../components'
+import { ConfirmSheet, Icon, NumberField, RpeSheet, Sheet, useToast } from '../components'
 import { type AppData, findSession, useData } from '../data'
 import { back, go } from '../nav'
+import { Cell, GridHeader, type WeightState, groupHeadline, needsHeadline, repsPlaceholder, rpeTarget, weightCaption, weightPlaceholder, weightState } from '../setGrid'
 
 const TIMER_KEY = 'zp-rest-timer'
 
@@ -79,7 +80,7 @@ function RestTimer({ timer, onChange }: { timer: TimerState | null; onChange: (t
         <div className="row grow" style={{ justifyContent: 'flex-end' }}>
           <button className="btn sm" aria-label="Отдых на 15 секунд меньше" onClick={() => onChange({ ...timer, endsAt: timer.endsAt - 15000 })}>−15</button>
           <button className="btn sm" aria-label="Отдых на 15 секунд больше" onClick={() => onChange({ ...timer, endsAt: timer.endsAt + 15000, total: timer.total + 15 })}>+15</button>
-          <button className="btn sm" onClick={() => onChange({ endsAt: Date.now() + timer.total * 1000, total: timer.total })}>Заново</button>
+          <button className="btn sm" aria-label="Начать отдых заново" title="Заново" onClick={() => onChange({ endsAt: Date.now() + timer.total * 1000, total: timer.total })}>↺</button>
           <button className="btn sm primary" onClick={() => onChange(null)}>{over ? 'Ок' : 'Пропустить'}</button>
         </div>
       </div>
@@ -246,13 +247,15 @@ function ExerciseBlock(props: {
   const toast = useToast()
   const [menu, setMenu] = useState(false)
   const [noteOpen, setNoteOpen] = useState(!!ex.note)
+  const [infoOpen, setInfoOpen] = useState(false)
   const [swap, setSwap] = useState(false)
   const info = getExercise(ex.exerciseId)
   const live = session.exercises.find((p) => p.slotId === ex.slotId && p.exerciseId === ex.exerciseId)
   const last = useMemo(() => lastResult(d.workouts, ex.exerciseId, ex.sets[0]?.groupId ?? '', workout.id), [d.workouts, ex.exerciseId, workout.id])
   const allDone = ex.sets.length > 0 && ex.sets.every((s) => s.done)
-  const groups: string[] = [...new Set(ex.sets.map((s) => s.groupId))]
   const bw = workout.bodyweight
+  const active = workout.status === 'active'
+  const currentIdx = active ? ex.sets.findIndex((s) => !s.done) : -1
 
   const applyLast = async () => {
     if (!last) return
@@ -277,72 +280,79 @@ function ExerciseBlock(props: {
 
   const slot = getSlot(ex.slotId)
   const options = slot.options.filter((o) => !HIDDEN_IN_PICKER.has(o.exerciseId))
+  // пояснения к упражнению: что вводить и особенности выполнения
+  const hints = [
+    ex.loadType === 'weighted_bodyweight' ? `Вводите только навешенный вес. Вес тела: ${fmtKg(bw)}${bw === null ? ' — укажите в профиле' : ''}.` : '',
+    ex.loadType === 'dumbbell' ? 'Вес одной гантели, в тоннаже ×2.' : '',
+    info.note && ex.loadType !== 'weighted_bodyweight' ? info.note : '',
+  ].filter(Boolean)
+  const meta = [LOAD_TYPE_LABEL[ex.loadType], ex.loadType !== 'bodyweight' ? `шаг ${fmt(ex.step)}` : '', ex.originalName ? `вместо «${ex.originalName}»` : ''].filter(Boolean).join(' · ')
+
+  // подходы по группам; нумерация сквозная внутри упражнения
+  const groups: string[] = [...new Set(ex.sets.map((s) => s.groupId))]
+  let n = 0
 
   return (
-    <div className={`ex-card${allDone ? ' done' : ''}`}>
-      <div className="ex-head">
-        <div className="row">
-          <div className="grow col" style={{ gap: 2 }}>
-            <span className="eyebrow">{slot.role}</span>
-            <span className="ex-title">{ex.exerciseName}</span>
-          </div>
-          <button className="icon-btn" aria-label="Действия с упражнением" onClick={() => setMenu(true)}><Icon.dots /></button>
-        </div>
-        <div className="row wrap">
-          <span className="badge">{LOAD_TYPE_LABEL[ex.loadType]}</span>
-          {ex.loadType !== 'bodyweight' && <span className="badge">шаг {fmtKg(ex.step)}</span>}
-          {ex.originalName && <span className="badge info">вместо: {ex.originalName}</span>}
-        </div>
-        {ex.loadType === 'weighted_bodyweight' && (
-          <span className="small muted">Вводите только навешенный вес. Вес тела: {fmtKg(bw)}{bw === null ? ' — укажите в профиле' : ''}.</span>
-        )}
-        {ex.loadType === 'dumbbell' && <span className="small muted">Вес одной гантели. В тоннаже считается ×2.</span>}
-        {info.note && ex.loadType !== 'weighted_bodyweight' && <span className="small muted">{info.note}</span>}
-        {last && (
-          <div className="row small">
-            <span className="grow muted">Прошлый раз ({fmtDate(last.date)}): {describeActual(ex, { actual: last })}</span>
-            {workout.status === 'active' && <button className="btn sm ghost" onClick={applyLast}>Подставить</button>}
-          </div>
-        )}
+    <section className={`ex-block${allDone ? ' done' : ''}`} aria-label={ex.exerciseName}>
+      <div className="ex-top">
+        <h3 className="ex-name">{ex.exerciseName}</h3>
+        <button className="icon-btn ghost" aria-label={`История: ${ex.exerciseName}`} onClick={() => go(`progress/${ex.exerciseId}`)}><Icon.history /></button>
+        <button className="icon-btn ghost" aria-label="Действия с упражнением" onClick={() => setMenu(true)}><Icon.dots /></button>
       </div>
+      <div className="ex-meta">{slot.role} · {meta}</div>
+      {hints.length > 0 && (
+        <button className={`ex-note${infoOpen ? ' open' : ''}`} onClick={() => setInfoOpen(!infoOpen)} aria-expanded={infoOpen}>
+          {hints.join(' ')}
+        </button>
+      )}
+      {last && (
+        <div className="ex-last">
+          <span className="grow">Прошлый раз {fmtDate(last.date)}: <strong>{describeActual(ex, { actual: last })}</strong></span>
+          {active && <button className="link-btn" onClick={applyLast}>Подставить</button>}
+        </div>
+      )}
 
+      <GridHeader />
       {groups.map((gid) => {
         const g = live?.groups.find((x) => x.groupId === gid)
         const sets = ex.sets.map((s, si) => ({ s, si })).filter(({ s }) => s.groupId === gid)
-        const issue = g && ((g.load.kind === 'weight' && !g.load.value.ok && g.load.value.issue.message)
-          || (g.load.kind === 'weighted_bw' && !g.load.added.ok && g.load.added.issue.message)
-          || (g.reps.kind === 'issue' && g.reps.issue.message))
+        const st = g ? weightState(g, session.id) : null
         const notes = g?.notes ?? []
-        const issueObj = g && ((g.load.kind === 'weight' && !g.load.value.ok && g.load.value.issue)
-          || (g.load.kind === 'weighted_bw' && !g.load.added.ok && g.load.added.issue)
-          || (g.reps.kind === 'issue' && g.reps.issue))
-        const sameSessionIssue = !!issueObj && issueObj.session === session.id
+        const showHead = needsHeadline(g, sets[0].s.groupLabel)
         return (
-          <div key={gid}>
-            <div className="group-head">
-              <span className="small muted">{sets[0].s.groupLabel}</span>
-              <span className="target">{g ? groupText(g) : sets[0].s.planned.text}</span>
-              {g?.load.kind === 'weighted_bw' && g.load.total.ok && <span className="tiny faint">всего {fmtKg(g.load.total.value)}</span>}
-              {g?.driver === 'rpe' && <span className="badge accent">RPE → след. вес</span>}
-              {g?.driver === 'amrap' && <span className="badge accent">запишите повторения</span>}
-            </div>
-            {issue && workout.status === 'active' && (sameSessionIssue
-              ? <div className="small muted" style={{ padding: '6px 14px 0' }}>Вес рассчитается, как только вы отметите RPE предыдущего подхода.</div>
-              : <div className="notice warn small" style={{ margin: '8px 10px' }}>{issue}</div>)}
-            {notes.filter(userNote).map((n) => <div key={n} className="small muted" style={{ padding: '6px 14px 0' }}>{n}</div>)}
-            {notes.some((n) => !userNote(n)) && (
-              <details className="more" style={{ padding: '4px 14px' }}>
+          <div key={gid} className={`sg-group${showHead ? ' has-head' : ''}`}>
+            {showHead && (
+              <div className="sg-sub">
+                <span className="grow">{g ? groupHeadline(g) : sets[0].s.planned.text}</span>
+                {g?.load.kind === 'weighted_bw' && g.load.total.ok && <span>всего {fmtKg(g.load.total.value)}</span>}
+                {g?.driver === 'rpe' && <span className="accent">RPE → след. вес</span>}
+                {g?.driver === 'amrap' && <span className="accent">запишите повторы</span>}
+              </div>
+            )}
+            {active && st?.kind === 'blocked' && <div className="sg-warn">{st.issue.message}</div>}
+            {active && st?.kind === 'waiting' && <div className="sg-wait">Вес появится после оценки RPE предыдущего подхода</div>}
+            {notes.filter(userNote).map((t) => <div key={t} className="sg-wait">{t}</div>)}
+            {sets.map(({ s, si }) => {
+              n++
+              return (
+                <SetRow key={si} num={n} ex={ex} s={s} si={si} ei={ei} workout={workout} g={g} st={st}
+                  current={si === currentIdx} onDone={props.onDone} onRpe={props.onRpe} />
+              )
+            })}
+            {notes.some((t) => !userNote(t)) && (
+              <details className="more sg-calc">
                 <summary>Как рассчитано</summary>
-                {notes.filter((n) => !userNote(n)).map((n) => <p key={n} className="tiny faint">{n}</p>)}
+                {notes.filter((t) => !userNote(t)).map((t) => <p key={t} className="tiny faint">{t}</p>)}
               </details>
             )}
-            {sets.map(({ s, si }) => <SetRow key={si} ex={ex} s={s} si={si} ei={ei} workout={workout} g={g} onDone={props.onDone} onRpe={props.onRpe} />)}
           </div>
         )
       })}
 
+      <button className="add-set" onClick={addSet}>+ Добавить сет</button>
+
       {noteOpen && (
-        <div style={{ padding: '8px 14px 12px' }}>
+        <div className="ex-notes">
           <NoteEditor value={ex.note} onSave={(note) => saveWorkout({ ...workout, exercises: workout.exercises.map((e, i) => (i === ei ? { ...e, note } : e)) })} />
         </div>
       )}
@@ -350,7 +360,7 @@ function ExerciseBlock(props: {
       <Sheet open={menu} onClose={() => setMenu(false)} title={ex.exerciseName}>
         <button className="btn block" onClick={() => { setNoteOpen(true); setMenu(false) }}>Заметка к упражнению</button>
         <button className="btn block" onClick={addSet}>Добавить подход</button>
-        {workout.status === 'active' && options.length > 1 && (
+        {active && options.length > 1 && (
           <button className="btn block" onClick={() => { setMenu(false); setSwap(true) }}>Заменить упражнение</button>
         )}
         {ex.originalName && <p className="small muted">Персональная замена: в исходной программе — «{ex.originalName}».</p>}
@@ -366,46 +376,103 @@ function ExerciseBlock(props: {
           </button>
         ))}
       </Sheet>
-    </div>
+    </section>
+  )
+}
+
+/** Поле ячейки: крупное число и подпись колонки; сохраняется при уходе из поля или Enter. */
+function CellInput(props: {
+  value: number | null; placeholder: string; caption: string; label: string
+  onCommit: (v: number | null) => void; integer?: boolean; allowNegative?: boolean
+}) {
+  const show = (v: number | null) => (v === null ? '' : fmt(v).replace(/\s/g, ''))
+  const [text, setText] = useState(show(props.value))
+  const focused = useRef(false)
+  useEffect(() => { if (!focused.current) setText(show(props.value)) }, [props.value])
+  return (
+    <label className="sg-cell input">
+      <input
+        inputMode={props.integer ? 'numeric' : 'decimal'} enterKeyHint="done" aria-label={props.label}
+        placeholder={props.placeholder} value={text}
+        onFocus={(e) => { focused.current = true; e.currentTarget.select() }}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => {
+          focused.current = false
+          if (text.trim() === '') { props.onCommit(null); return }
+          let v = parseNum(text)
+          if (v === null || (!props.allowNegative && v < 0)) { setText(show(props.value)); return }
+          if (props.integer) v = Math.round(v)
+          props.onCommit(v)
+        }}
+        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      />
+      <span className="c">{props.caption}</span>
+    </label>
   )
 }
 
 function SetRow(props: {
-  ex: WorkoutExercise; s: WorkoutSet; si: number; ei: number; workout: WorkoutRow; g: PlannedGroup | undefined
+  num: number; ex: WorkoutExercise; s: WorkoutSet; si: number; ei: number; workout: WorkoutRow; g: PlannedGroup | undefined
+  st: WeightState | null; current: boolean
   onDone: (ei: number, si: number, ex: WorkoutExercise, s: WorkoutSet, g: PlannedGroup | undefined) => void
   onRpe: (si: number) => void
 }) {
-  const { ex, s, si, ei, workout, g } = props
+  const { ex, s, si, ei, workout, g, st, num } = props
   const bwOnly = ex.loadType === 'bodyweight'
   const wbw = ex.loadType === 'weighted_bodyweight'
   const set = (patch: Partial<WorkoutSet['actual']>) => updateSet(workout.id, ei, si, { actual: patch })
   const plannedReps = typeof s.planned.reps === 'number' ? s.planned.reps : null
+  // ячейка веса: факт, иначе план, иначе состояние («подбор», «ждёт») — но не выдуманное число
+  const wPlaceholder = s.planned.weight !== null ? fmt(s.planned.weight).replace(/\s/g, '') : st ? weightPlaceholder(st) : '—'
   const shownWeight = s.actual.weight ?? s.planned.weight
   let sub = ''
   if (wbw && workout.bodyweight !== null && shownWeight !== null) sub = `всего ${fmtKg(workout.bodyweight + shownWeight)} с весом тела`
   if (ex.loadType === 'dumbbell' && shownWeight !== null) sub = `2 × ${fmtKg(shownWeight)} = ${fmtKg(shownWeight * 2)}`
-  if (s.planned.reps === 'amrap') sub = [sub, 'на максимум повторений'].filter(Boolean).join(' · ')
-  if (s.planned.reps === 'toFailure') sub = [sub, 'до отказа'].filter(Boolean).join(' · ')
-  const needRpe = s.driver === 'rpe' && s.done && s.actual.rpe === null
+  const needRpe = s.driver === 'rpe' && s.actual.rpe === null
+  const target = rpeTarget(g)
+  const bump = (field: 'weight' | 'reps', d: number) => {
+    const base = field === 'weight' ? (s.actual.weight ?? s.planned.weight ?? 0) : (s.actual.reps ?? plannedReps ?? 0)
+    const next = Math.round((base + d) * 1000) / 1000
+    if (next < 0 && !(field === 'weight' && wbw)) return
+    void set(field === 'weight' ? { weight: next } : { reps: next })
+  }
   return (
-    <div className={`set-row${bwOnly ? ' bw' : ''}${s.done ? ' is-done' : ''}`}>
-      <span className="set-n">{s.extra ? '+' : s.index}</span>
-      {!bwOnly && (
-        <Stepper
-          label={wbw ? `Подход ${s.index}: отягощение, кг` : `Подход ${s.index}: вес, кг`}
-          value={s.actual.weight} placeholder={s.planned.weight} step={ex.step} allowNegative={wbw}
-          onChange={(v) => set({ weight: v })}
-        />
+    <>
+      <div className={`sg-row${s.done ? ' is-done' : ''}${props.current ? ' is-current' : ''}`}>
+        <span className={`sg-mark${s.extra ? ' extra' : ''}`} aria-label={`Сет ${num}`}>{num}</span>
+        {bwOnly ? (
+          <Cell value="—" caption="СВ. ВЕС" tone="muted" />
+        ) : (
+          <CellInput label={wbw ? `Сет ${num}: отягощение, кг` : `Сет ${num}: вес, кг`} value={s.actual.weight} placeholder={wPlaceholder}
+            caption={weightCaption(ex.loadType)} allowNegative={wbw} onCommit={(v) => set({ weight: v })} />
+        )}
+        <CellInput label={`Сет ${num}: повторения`} value={s.actual.reps} placeholder={repsPlaceholder(g, s.planned.reps)} caption="ПОВТОР" integer onCommit={(v) => set({ reps: v })} />
+        <button className={`sg-cell rpe${needRpe ? (s.done ? ' need' : ' drive') : ''}`} aria-label={`Сет ${num}: RPE`} onClick={() => props.onRpe(si)}>
+          <span className={`v${s.actual.rpe === null ? ' ph' : ''}`}>{s.actual.rpe !== null ? fmt(s.actual.rpe) : (target ?? '—')}</span>
+          <span className="c">RPE</span>
+        </button>
+        <button className="sg-done" aria-pressed={s.done} aria-label={s.done ? `Сет ${num} выполнен — отменить` : `Отметить сет ${num} выполненным`}
+          onClick={() => props.onDone(ei, si, ex, s, g)}>
+          <Icon.check />
+        </button>
+      </div>
+      {(props.current || sub) && (
+        <div className="sg-extra">
+          {props.current && !bwOnly && (
+            <span className="sg-bumps" aria-label="Быстрая правка веса">
+              <button onClick={() => bump('weight', -ex.step)} aria-label={`Вес минус ${fmt(ex.step)}`}>−{fmt(ex.step)}</button>
+              <button onClick={() => bump('weight', ex.step)} aria-label={`Вес плюс ${fmt(ex.step)}`}>+{fmt(ex.step)}</button>
+            </span>
+          )}
+          {props.current && (
+            <span className="sg-bumps reps" aria-label="Быстрая правка повторений">
+              <button onClick={() => bump('reps', -1)} aria-label="Повторы минус 1">−1</button>
+              <button onClick={() => bump('reps', 1)} aria-label="Повторы плюс 1">+1</button>
+            </span>
+          )}
+          {sub && <span className="sg-subline">{sub}</span>}
+        </div>
       )}
-      <Stepper className="reps" label={`Подход ${s.index}: повторения`} value={s.actual.reps} placeholder={plannedReps} step={1} onChange={(v) => set({ reps: v === null ? null : Math.round(v) })} />
-      <button className={`rpe-btn${needRpe ? ' need' : ''}`} aria-label={`Подход ${s.index}: RPE`} onClick={() => props.onRpe(si)}>
-        {s.actual.rpe !== null ? fmt(s.actual.rpe) : <span className="ph">RPE</span>}
-      </button>
-      <button className="done-btn" aria-pressed={s.done} aria-label={s.done ? `Подход ${s.index} выполнен — отменить` : `Отметить подход ${s.index} выполненным`}
-        onClick={() => props.onDone(ei, si, ex, s, g)}>
-        <Icon.check />
-      </button>
-      {sub && <span className="set-sub">{sub}</span>}
-    </div>
+    </>
   )
 }

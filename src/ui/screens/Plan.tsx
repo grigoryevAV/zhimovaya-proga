@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { fmtKg, groupText } from '../../domain/format'
+import { fmt, fmtKg, groupText } from '../../domain/format'
 import { WEEKS, type WeekId, getSlot, mesocycleOf, weekLabel, weekShort } from '../../domain/program/definition'
 import type { PlannedExercise, PlannedGroup } from '../../domain/program/engine'
-import { describeActual } from '../../domain/progression/workout'
 import { clearOverride, setOverride, startWorkout } from '../../storage/repo'
 import { NumberField, Sheet, useToast } from '../components'
 import { useData } from '../data'
 import { go } from '../nav'
+import { Cell, GridHeader, PlanGroupRow, groupHeadline, weightCaption } from '../setGrid'
 
 export function parseWeek(s: string | undefined): WeekId | null {
   if (!s) return null
@@ -49,31 +49,43 @@ export function PlanScreen({ week }: { week?: string }) {
         const w = d.workoutBySession.get(s.id)
         const status = w?.status === 'done' ? 'done' : w?.status === 'active' ? 'active' : d.next?.id === s.id ? 'next' : ''
         return (
-          <div key={s.id} className="card day-card">
-            <div className="row">
+          <div key={s.id} className="card day-card compact">
+            <div className="day-head">
               <span className={`status-dot ${status === 'done' ? 'done' : status === 'active' || status === 'next' ? 'active' : ''}`} />
               <h3 className="grow">День {s.day}</h3>
               <span className="small muted">{status === 'done' ? 'выполнена' : status === 'active' ? 'идёт' : status === 'next' ? 'следующая' : ''}</span>
             </div>
+            <GridHeader withStatus={false} firstLabel="ПОДХ" />
             {s.exercises.map((e) => {
               const logged = w?.status === 'done' ? w.exercises.find((x) => x.slotId === e.slotId) : undefined
               return (
-                <div key={e.slotId} className="ex-line">
-                  <div className="col grow" style={{ gap: 2 }}>
-                    <strong className="small">{logged?.exerciseName ?? e.exercise.name}</strong>
-                    {logged ? (
-                      <span className="small muted">
-                        {logged.sets.filter((x) => x.done).map((x) => describeActual(logged, x)).join(', ') || 'не выполнено'}
-                      </span>
-                    ) : (
-                      e.groups.map((g) => (
-                        <button key={g.groupId} className="group-line" disabled={w?.status === 'done'} onClick={() => setEdit({ g, e })}>
-                          <span className="muted">{g.label}{g.overridden ? ' ✎' : ''}</span>
-                          <span className="gv">{groupText(g)}</span>
-                        </button>
+                <div key={e.slotId} className="plan-ex">
+                  <div className="plan-ex-name">{logged?.exerciseName ?? e.exercise.name}</div>
+                  {logged ? (
+                    logged.sets.filter((x) => x.done).length === 0 ? <div className="plan-ex-meta">не выполнено</div> : (
+                      logged.sets.filter((x) => x.done).map((x, i) => (
+                        <div key={i} className="sg-row plan no-status is-done">
+                          <span className="sg-mark">{i + 1}</span>
+                          <Cell value={logged.loadType === 'bodyweight' ? '—' : fmt(x.actual.weight)} caption={weightCaption(logged.loadType)} />
+                          <Cell value={x.actual.reps ?? '—'} caption="ПОВТОР" />
+                          <Cell value={x.actual.rpe !== null ? fmt(x.actual.rpe) : '—'} caption="RPE" tone={x.actual.rpe === null ? 'muted' : undefined} />
+                        </div>
                       ))
-                    )}
-                  </div>
+                    )
+                  ) : (
+                    e.groups.map((g) => (
+                      <button key={g.groupId} className="plan-row-btn" disabled={w?.status === 'done'} onClick={() => setEdit({ g, e })}
+                        aria-label={`${e.exercise.name}: ${g.label}, изменить`}>
+                        <div className="plan-row-label">
+                          <span>{groupHeadline(g)}</span>
+                          {g.overridden && <span className="accent">✎ изменено</span>}
+                          {g.driver === 'rpe' && <span className="accent">RPE → след. вес</span>}
+                          {g.driver === 'amrap' && <span className="accent">макс. повторов</span>}
+                        </div>
+                        <PlanGroupRow g={g} loadType={e.exercise.loadType} sessionId={s.id} />
+                      </button>
+                    ))
+                  )}
                 </div>
               )
             })}

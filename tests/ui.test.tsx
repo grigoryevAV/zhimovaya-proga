@@ -56,20 +56,22 @@ describe('экраны на мобильной ширине', () => {
     fireEvent.click(await screen.findByText('Начать тренировку'))
     await waitFor(() => expect(window.location.hash).toBe('#/workout/P1-1'))
     await go('#/workout/P1-1')
-    const weight = (await screen.findAllByLabelText('Подход 1: вес, кг', { selector: 'input' }))[0]
+    const weight = (await screen.findAllByLabelText('Сет 1: вес, кг', { selector: 'input' }))[0]
     fireEvent.focus(weight)
     fireEvent.change(weight, { target: { value: '72,5' } })
     fireEvent.blur(weight)
-    const reps = screen.getAllByLabelText('Подход 1: повторения', { selector: 'input' })[0]
+    const reps = screen.getAllByLabelText('Сет 1: повторения', { selector: 'input' })[0]
     fireEvent.focus(reps)
     fireEvent.change(reps, { target: { value: '6' } })
     fireEvent.blur(reps)
-    await waitFor(() => expect((screen.getAllByLabelText('Подход 1: вес, кг', { selector: 'input' })[0] as HTMLInputElement).value).toBe('72,5'))
-    fireEvent.click(screen.getAllByLabelText('Отметить подход 1 выполненным')[0])
+    await waitFor(() => expect((screen.getAllByLabelText('Сет 1: вес, кг', { selector: 'input' })[0] as HTMLInputElement).value).toBe('72,5'))
+    fireEvent.click(screen.getAllByLabelText('Отметить сет 1 выполненным')[0])
     await screen.findByText('Оцените RPE подхода')
     fireEvent.click(screen.getAllByRole('button').find((b) => b.textContent === '91 в запасе')!)
     // второй подход рассчитан: 72,5 / коэф(9; 6) = 0,81 → ·0,8 = 71,6 → 72,5
-    await waitFor(() => expect(document.body.textContent).toContain('1 × 5 · 72,5 кг'))
+    await waitFor(() => expect((screen.getAllByLabelText('Сет 2: вес, кг')[0] as HTMLInputElement).placeholder).toBe('72,5'))
+    expect((screen.getAllByLabelText('Сет 3: вес, кг')[0] as HTMLInputElement).placeholder).toBe('ждёт')
+    expect((screen.getAllByLabelText('Сет 1: вес, кг')[1] as HTMLInputElement).placeholder).toBe('подбор')
     expect(document.body.textContent).not.toMatch(BAD)
   })
 })

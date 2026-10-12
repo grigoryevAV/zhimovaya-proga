@@ -286,7 +286,6 @@ export class PlanEngine {
         id: 's1', label: 'Подход 1', sets: 1, driver: 'rpe',
         reps: { kind: 'choose', hint: bw ? 'Повторения с запасом 1–3 до отказа' : hint },
         weight: bw ? { kind: 'none' } : { kind: 'choose', hint },
-        notes: [bw ? 'Сделайте подход, оставив 1–3 повторения в запасе, и оцените RPE.' : `Подберите вес: ${hint}. Внесите вес, повторения и RPE.`],
       })
     }
     const startIdx = week === 'P1' ? 0 : 2
