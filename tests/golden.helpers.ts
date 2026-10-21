@@ -35,7 +35,8 @@ export function num(v: unknown): number | null {
   return null
 }
 
-export function inputFromScenario(cells: Cells): PlanInput {
+/** fixedWorkbook: исправленная книга берёт шаг слота «+» дня 2 из E89 (в исходной — константа 2,5). */
+export function inputFromScenario(cells: Cells, fixedWorkbook = false): PlanInput {
   const choices = {} as Record<SlotId, string | null>
   const steps: Record<string, number> = {}
   const tests: PlanInput['tests'] = {}
@@ -46,7 +47,7 @@ export function inputFromScenario(cells: Cells): PlanInput {
     if (id === undefined) throw new Error(`Нет соответствия для «${nm}»`)
     choices[s.id] = id
     if (!id) continue
-    const sc = STEP_CELL[s.id]
+    const sc = fixedWorkbook && s.id === 'd2s5' ? 'E89' : STEP_CELL[s.id]
     steps[id] = typeof sc === 'number' ? sc : (num(cells[sc]) ?? 1)
     const tw = num(cells[`C${s.workbook.testRow}`])
     const tr = num(cells[`D${s.workbook.testRow}`])

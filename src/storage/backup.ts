@@ -96,15 +96,16 @@ export function parseBackupText(text: string): ValidateResult {
 /** Полная замена данных содержимым копии. Вызывать только после подтверждения пользователя. */
 export async function importBackup(file: BackupFile): Promise<void> {
   const d = file.data
-  await db.transaction('rw', [db.profile, db.bodyweights, db.tests, db.workouts, db.overrides, db.changes], async () => {
-    await Promise.all([db.profile.clear(), db.bodyweights.clear(), db.tests.clear(), db.workouts.clear(), db.overrides.clear(), db.changes.clear()])
-    await db.profile.put({ ...defaultProfile(), ...(d.profile ?? {}), id: 'me' })
-    await db.bodyweights.bulkPut(d.bodyweights)
-    await db.tests.bulkPut(d.tests)
-    await db.workouts.bulkPut(d.workouts)
-    await db.overrides.bulkPut(d.overrides)
-    await db.changes.bulkPut(d.changes)
-    await db.changes.add({ at: new Date().toISOString(), kind: 'import', text: `Данные восстановлены из копии от ${file.exportedAt.slice(0, 10)}` })
+  const base = db
+  await base.transaction('rw', [base.profile, base.bodyweights, base.tests, base.workouts, base.overrides, base.changes], async () => {
+    await Promise.all([base.profile.clear(), base.bodyweights.clear(), base.tests.clear(), base.workouts.clear(), base.overrides.clear(), base.changes.clear()])
+    await base.profile.put({ ...defaultProfile(), ...(d.profile ?? {}), id: 'me' })
+    await base.bodyweights.bulkPut(d.bodyweights)
+    await base.tests.bulkPut(d.tests)
+    await base.workouts.bulkPut(d.workouts)
+    await base.overrides.bulkPut(d.overrides)
+    await base.changes.bulkPut(d.changes)
+    await base.changes.add({ at: new Date().toISOString(), kind: 'import', text: `Данные восстановлены из копии от ${file.exportedAt.slice(0, 10)}` })
   })
 }
 

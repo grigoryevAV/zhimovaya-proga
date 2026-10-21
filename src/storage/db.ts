@@ -51,11 +51,11 @@ export function defaultProfile(now = new Date().toISOString()): ProfileRow {
   }
 }
 
-export async function ensureProfile(): Promise<ProfileRow> {
-  const p = await db.profile.get('me')
+export async function ensureProfile(d: AppDB = db): Promise<ProfileRow> {
+  const p = await d.profile.get('me')
   if (p) return p
   const fresh = defaultProfile()
-  await db.profile.put(fresh)
+  await d.profile.put(fresh)
   return fresh
 }
 

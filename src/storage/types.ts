@@ -66,6 +66,8 @@ export interface WorkoutExercise {
   exerciseName: string
   /** Исходное название в книге, если упражнение — персональная замена. */
   originalName?: string
+  /** Упражнение заменено только в этой тренировке (программа не изменена). */
+  swappedForToday?: boolean
   loadType: LoadType
   step: number
   note: string

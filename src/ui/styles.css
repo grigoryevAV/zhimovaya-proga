@@ -6,7 +6,8 @@
   --line: #2b3038;
   --text: #eef1f6;
   --muted: #9aa5b5;
-  --faint: #6d7889;
+  /* контраст к --card (5,4:1) и --bg (6,1:1) — не ниже 4,5:1 */
+  --faint: #8a94a3;
   --accent: #ffb020;
   --accent-ink: #1a1200;
   --ok: #3ccf7a;
@@ -45,7 +46,8 @@
   --line: #d8dee7;
   --text: #11151b;
   --muted: #566173;
-  --faint: #7d8796;
+  /* контраст к --card (5,5:1), --bg (5,0:1) и --cell-bg (4,8:1) — не ниже 4,5:1 */
+  --faint: #5f6a79;
   --accent: #e08a00;
   --accent-ink: #ffffff;
   --ok: #138a4a;
@@ -136,6 +138,8 @@ p { margin: 0; }
 .btn.ghost { background: transparent; }
 .btn.block { width: 100%; }
 .btn.sm { min-height: 36px; padding: 0 12px; font-size: 14px; }
+/* крупная зона нажатия для кнопок в шапке экрана тренировки */
+.btn.sm.tap44 { min-height: 44px; }
 .btn:disabled { opacity: 0.45; }
 .icon-btn { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: var(--card-2); display: inline-flex; align-items: center; justify-content: center; flex: none; }
 .icon-btn svg { width: 22px; height: 22px; }
@@ -172,7 +176,7 @@ textarea.input { padding: 10px 12px; min-height: 72px; resize: vertical; }
 
 /* ---------- сегменты и чипсы ---------- */
 .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 3px; gap: 3px; }
-.seg button { border: 0; background: none; min-height: 40px; border-radius: 8px; font-weight: 650; color: var(--muted); }
+.seg button { border: 0; background: none; min-height: 44px; border-radius: 8px; font-weight: 650; color: var(--muted); }
 .seg button[aria-pressed='true'] { background: var(--card-2); color: var(--text); box-shadow: var(--shadow); }
 .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
 .chips::-webkit-scrollbar { display: none; }
@@ -270,10 +274,12 @@ details.more[open] > summary::before { content: '▾ '; }
 }
 
 /* ================= блок упражнения и сетка подходов (общая для тренировки и плана) ================= */
-.icon-btn.ghost { background: transparent; border-color: transparent; color: var(--muted); width: 36px; height: 36px; }
+.icon-btn.ghost { background: transparent; border-color: transparent; color: var(--muted); width: 44px; height: 44px; }
 .icon-btn:focus-visible, .btn:focus-visible, .sg-done:focus-visible, .add-set:focus-visible, .link-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn:disabled, .icon-btn:disabled { cursor: not-allowed; }
 .link-btn { background: none; border: 0; padding: var(--s-1) 0; color: var(--accent); font-weight: 650; font-size: 13px; white-space: nowrap; }
+/* «Подставить»: зона нажатия не меньше 44 px, визуальный размер прежний (Д1) */
+.link-btn.tap { min-height: 44px; padding: 0 var(--s-2); display: inline-flex; align-items: center; justify-content: center; }
 
 .ex-block { background: var(--card); border-radius: var(--radius); padding: var(--s-2) var(--s-3) var(--s-3); display: flex; flex-direction: column; gap: var(--s-1); }
 .ex-top { display: flex; align-items: flex-start; gap: 2px; }
@@ -287,7 +293,7 @@ details.more[open] > summary::before { content: '▾ '; }
 .ex-last strong { color: var(--text); font-weight: 650; }
 .ex-notes { padding-top: var(--s-2); }
 
-.sg-head { display: grid; grid-template-columns: var(--sg-cols); gap: var(--s-1); padding: var(--s-2) 0 2px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--faint); text-align: center; }
+.sg-head { display: grid; grid-template-columns: var(--sg-cols); gap: var(--s-1); padding: var(--s-2) 0 2px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; color: var(--faint); text-align: center; }
 .sg-head.no-status { grid-template-columns: var(--sg-cols-plan); }
 .sg-group + .sg-group.has-head { border-top: 1px solid var(--line); margin-top: 2px; padding-top: 2px; }
 .sg-sub { display: flex; gap: var(--s-2); align-items: baseline; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 6px 2px 2px; }
@@ -306,7 +312,7 @@ details.more[open] > summary::before { content: '▾ '; }
 
 .sg-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; height: 44px; border-radius: var(--radius-sm); border: 0; background: transparent; padding: 0; color: var(--text); }
 .sg-cell .v { font-size: 19px; font-weight: 750; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.sg-cell .c { font-size: 10px; font-weight: 650; letter-spacing: 0.05em; color: var(--faint); line-height: 1.2; }
+.sg-cell .c { font-size: 11px; font-weight: 650; letter-spacing: 0.05em; color: var(--faint); line-height: 1.2; }
 .sg-cell.muted .v { color: var(--faint); font-size: 15px; font-weight: 650; }
 .sg-cell.warn .v { color: var(--warn); font-size: 14px; }
 .sg-cell.accent .v { color: var(--accent); font-size: 15px; }
@@ -314,10 +320,10 @@ details.more[open] > summary::before { content: '▾ '; }
 button.sg-cell { cursor: pointer; }
 .sg-row.is-done .sg-cell.input, .sg-row.is-done button.sg-cell { background: transparent; }
 .sg-cell input { width: 100%; border: 0; background: transparent; text-align: center; font-size: 19px; font-weight: 750; line-height: 1.1; padding: 0; font-variant-numeric: tabular-nums; }
-.sg-cell input::placeholder { color: var(--faint); font-weight: 600; font-size: 16px; opacity: 1; }
+.sg-cell input::placeholder { color: var(--faint); font-weight: 600; font-size: 16px; opacity: 1; font-style: italic; }
 .sg-cell input:focus { outline: none; }
 .sg-cell.input:focus-within { box-shadow: inset 0 0 0 2px var(--accent); background: var(--cell-bg); }
-.sg-cell .v.ph { color: var(--faint); font-size: 15px; font-weight: 650; }
+.sg-cell .v.ph { color: var(--faint); font-size: 15px; font-weight: 650; font-style: italic; }
 .sg-cell.rpe.drive { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .sg-cell.rpe.need { box-shadow: inset 0 0 0 2px var(--accent); background: var(--cell-bg); }
 .sg-cell.rpe.need .c, .sg-cell.rpe.drive .c { color: var(--accent); }
@@ -326,12 +332,14 @@ button.sg-cell { cursor: pointer; }
 .sg-done[aria-pressed='true'] svg { background: var(--ok); border-color: var(--ok); color: #04150b; }
 .sg-done:active svg { transform: scale(0.92); }
 
-.sg-extra { display: grid; grid-template-columns: var(--sg-cols); gap: var(--s-1); align-items: center; padding: 0 0 4px; }
-.sg-bumps { grid-column: 2; display: grid; grid-template-columns: 1fr 1fr; gap: 3px; }
-.sg-bumps.reps { grid-column: 3; }
-.sg-bumps button { height: 30px; border-radius: 8px; border: 1px solid var(--line); background: var(--card-2); font-size: 13px; font-weight: 700; padding: 0; color: var(--text); font-variant-numeric: tabular-nums; }
+/* полоска быстрой правки текущего сета: на всю ширину строки, чтобы 44-px кнопки не вылезали из узкой колонки */
+.sg-extra { display: flex; flex-wrap: wrap; gap: var(--s-1); align-items: center; padding: 0 0 4px calc(var(--mark) + var(--s-1)); }
+.sg-bumps { flex: 1 1 0; display: grid; grid-template-columns: 1fr 1fr; gap: var(--s-1); min-width: 0; }
+.sg-bumps.reps { flex: 1 1 0; }
+/* зона нажатия — не меньше 44 px (Д1) */
+.sg-bumps button { min-height: 44px; min-width: 44px; border-radius: 8px; border: 1px solid var(--line); background: var(--card-2); font-size: 13px; font-weight: 700; padding: 0; color: var(--text); font-variant-numeric: tabular-nums; }
 .sg-bumps button:active { background: var(--line); }
-.sg-subline { grid-column: 2 / -1; font-size: 11.5px; color: var(--faint); }
+.sg-subline { flex-basis: 100%; font-size: 11.5px; color: var(--faint); }
 
 .add-set { margin-top: var(--s-2); height: 38px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: transparent; color: var(--info); font-weight: 650; font-size: 14px; }
 .add-set:active { background: var(--card-2); }

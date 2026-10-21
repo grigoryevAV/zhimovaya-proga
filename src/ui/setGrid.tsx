@@ -55,6 +55,32 @@ export function weightPlaceholder(st: WeightState): string {
   }
 }
 
+/**
+ * База для кнопок «± шаг»: факт → план → прошлый результат упражнения.
+ * Если ничего нет — базы нет, значение прибавлять не к чему (К6).
+ */
+export function bumpBase(actual: number | null, planned: number | null, last: number | null): number | null {
+  return actual ?? planned ?? last
+}
+
+/**
+ * Новое значение после шага ±. null — значение менять нечем (нет ни факта, ни плана, ни прошлого результата).
+ * Если факта и плана нет, но есть прошлый результат, первое нажатие ставит его (без шага) —
+ * так «подбор» не превращается в выдуманные «2,5 кг».
+ */
+export function bumpValue(o: {
+  actual: number | null; planned: number | null; last: number | null
+  delta: number; step: number; min?: number
+}): number | null {
+  const base = bumpBase(o.actual, o.planned, o.last)
+  if (base === null) return null
+  if (o.actual === null && o.planned === null) return o.last
+  const next = Math.round((base + o.delta) * 1000) / 1000
+  const min = o.min ?? 0
+  if (next < min) return null
+  return next
+}
+
 export function repsPlaceholder(g: PlannedGroup | undefined, planned: number | 'amrap' | 'toFailure' | null): string {
   if (g?.reps.kind === 'choose') return g.reps.hint.match(/\d+[–-]\d+/)?.[0] ?? 'выбор'
   if (planned === 'amrap') return 'макс'

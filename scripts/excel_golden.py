@@ -16,9 +16,12 @@ import openpyxl
 import win32com.client
 from openpyxl.utils import column_index_from_string as ci, get_column_letter as gl
 
+import sys
+
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "Жимовая прога v 2.0.xlsx"
-OUT = ROOT / "tests" / "fixtures" / "excel-golden.json"
+# необязательные аргументы: книга и файл результата (по умолчанию — исходник и эталон тестов)
+SRC = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "Жимовая прога v 2.0.xlsx"
+OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "tests" / "fixtures" / "excel-golden.json"
 
 # точные названия из столбца L листа «Формулы» (с хвостовыми пробелами — VLOOKUP точный)
 names = {}

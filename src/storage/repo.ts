@@ -3,8 +3,8 @@ import { getExercise } from '../domain/exercises/catalog'
 import { fmtKg, today } from '../domain/format'
 import { type SlotId, getSlot } from '../domain/program/definition'
 import type { PlannedSession } from '../domain/program/engine'
-import { newWorkout, refreshActiveWorkout, testsFromWorkout } from '../domain/progression/workout'
-import { db, ensureProfile } from './db'
+import { type SetAddress, findSet, newWorkout, refreshActiveWorkout, testsFromWorkout } from '../domain/progression/workout'
+import { type AppDB, db, ensureProfile } from './db'
 import type { ChangeRow, OverrideRow, ProfileRow, TestRow, WorkoutRow, WorkoutSet } from './types'
 
 const now = () => new Date().toISOString()
@@ -14,18 +14,28 @@ function uid(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/**
+ * База берётся один раз на операцию: смена базы (например, в тестах) посреди await
+ * не должна перенаправлять запись в другую базу.
+ */
+async function logChangeIn(d: AppDB, kind: ChangeRow['kind'], text: string): Promise<void> {
+  await d.changes.add({ at: now(), kind, text })
+}
+
 export async function logChange(kind: ChangeRow['kind'], text: string): Promise<void> {
-  await db.changes.add({ at: now(), kind, text })
+  await logChangeIn(db, kind, text)
 }
 
 export async function updateProfile(patch: Partial<ProfileRow>, change?: { kind: ChangeRow['kind']; text: string }): Promise<void> {
-  const p = await ensureProfile()
-  await db.profile.put({ ...p, ...patch, id: 'me', updatedAt: now() })
-  if (change) await logChange(change.kind, change.text)
+  const d = db
+  const p = await ensureProfile(d)
+  await d.profile.put({ ...p, ...patch, id: 'me', updatedAt: now() })
+  if (change) await logChangeIn(d, change.kind, change.text)
 }
 
 export async function setChoice(slotId: SlotId, exerciseId: string | null): Promise<void> {
-  const p = await ensureProfile()
+  const d = db
+  const p = await ensureProfile(d)
   const slot = getSlot(slotId)
   const before = p.choices[slotId]
   if (before === exerciseId) return
@@ -37,26 +47,25 @@ export async function setChoice(slotId: SlotId, exerciseId: string | null): Prom
 }
 
 export async function setStep(exerciseId: string, step: number): Promise<void> {
-  const p = await ensureProfile()
   await updateProfile(
-    { steps: { ...p.steps, [exerciseId]: step } },
+    { steps: { ...(await ensureProfile()).steps, [exerciseId]: step } },
     { kind: 'step', text: `Шаг округления «${getExercise(exerciseId).name}»: ${fmtKg(step)}. Будущие веса пересчитаны.` },
   )
 }
 
 export async function setSchemeRow(exerciseId: string, row: number, label: string): Promise<void> {
-  const p = await ensureProfile()
   await updateProfile(
-    { schemeRows: { ...p.schemeRows, [exerciseId]: row } },
+    { schemeRows: { ...(await ensureProfile()).schemeRows, [exerciseId]: row } },
     { kind: 'scheme', text: `Рабочий диапазон «${getExercise(exerciseId).name}»: ${label}` },
   )
 }
 
 export async function addBodyweight(kg: number, date = today()): Promise<void> {
-  const existing = await db.bodyweights.where('date').equals(date).first()
-  if (existing?.id !== undefined) await db.bodyweights.update(existing.id, { kg })
-  else await db.bodyweights.add({ date, kg })
-  await logChange('bodyweight', `Вес тела ${fmtKg(kg)} с ${date}. Новые расчёты учитывают его, прошлые тренировки — нет.`)
+  const d = db
+  const existing = await d.bodyweights.where('date').equals(date).first()
+  if (existing?.id !== undefined) await d.bodyweights.update(existing.id, { kg })
+  else await d.bodyweights.add({ date, kg })
+  await logChangeIn(d, 'bodyweight', `Вес тела ${fmtKg(kg)} с ${date}. Новые расчёты учитывают его, прошлые тренировки — нет.`)
 }
 
 export async function deleteBodyweight(id: number): Promise<void> {
@@ -64,10 +73,11 @@ export async function deleteBodyweight(id: number): Promise<void> {
 }
 
 export async function saveTest(t: TestRow): Promise<void> {
-  await db.tests.put(t)
+  const d = db
+  await d.tests.put(t)
   const ex = getExercise(t.exerciseId)
   const w = ex.loadType === 'bodyweight' ? '' : `${ex.loadType === 'weighted_bodyweight' ? '+' : ''}${fmtKg(t.weight)} × `
-  await logChange('test', `Тест «${ex.name}»: ${w}${t.reps ?? '—'}${t.rpe !== null && t.rpe !== 10 ? ` @${t.rpe}` : ''}. Будущие веса пересчитаны.`)
+  await logChangeIn(d, 'test', `Тест «${ex.name}»: ${w}${t.reps ?? '—'}${t.rpe !== null && t.rpe !== 10 ? ` @${t.rpe}` : ''}. Будущие веса пересчитаны.`)
 }
 
 export async function deleteTest(slotId: SlotId): Promise<void> {
@@ -75,13 +85,15 @@ export async function deleteTest(slotId: SlotId): Promise<void> {
 }
 
 export async function setOverride(key: string, o: Omit<OverrideRow, 'key' | 'updatedAt'>, text: string): Promise<void> {
-  await db.overrides.put({ key, ...o, updatedAt: now() })
-  await logChange('override', text)
+  const d = db
+  await d.overrides.put({ key, ...o, updatedAt: now() })
+  await logChangeIn(d, 'override', text)
 }
 
 export async function clearOverride(key: string, text: string): Promise<void> {
-  await db.overrides.delete(key)
-  await logChange('override', text)
+  const d = db
+  await d.overrides.delete(key)
+  await logChangeIn(d, 'override', text)
 }
 
 // ------------------------------------------------ тренировки
@@ -92,31 +104,119 @@ export async function activeWorkout(): Promise<WorkoutRow | undefined> {
 
 /** Начать (или продолжить) тренировку по плановой сессии. */
 export async function startWorkout(session: PlannedSession, bodyweight: number | null): Promise<WorkoutRow> {
-  const existing = await db.workouts.where('sessionId').equals(session.id).first()
+  const d = db
+  const existing = await d.workouts.where('sessionId').equals(session.id).first()
   if (existing) {
     if (existing.status === 'active') return existing
     throw new Error('Эта тренировка уже завершена — откройте её в истории')
   }
-  const other = await activeWorkout()
+  const other = await d.workouts.where('status').equals('active').first()
   if (other) throw new Error(`Сначала завершите начатую тренировку (${other.sessionId})`)
   const w = newWorkout(session, bodyweight, now(), uid())
-  await db.workouts.put(w)
+  await d.workouts.put(w)
   return w
 }
 
+/**
+ * Полная перезапись записи тренировки. Внимание: снимок экрана здесь затрёт факт, введённый раньше
+ * (К1) — для точечных правок используйте patchWorkout и его обёртки.
+ */
 export async function saveWorkout(w: WorkoutRow): Promise<void> {
   await db.workouts.put(w)
 }
 
-export async function updateSet(workoutId: string, exIdx: number, setIdx: number, patch: Omit<Partial<WorkoutSet>, 'actual'> & { actual?: Partial<WorkoutSet['actual']> }): Promise<void> {
-  await db.transaction('rw', db.workouts, async () => {
-    const w = await db.workouts.get(workoutId)
+/**
+ * Патч записи тренировки: читает свежую запись внутри транзакции и применяет изменение к ней.
+ * Так снимок экрана не затирает факт, введённый раньше (К1).
+ */
+export async function patchWorkout(workoutId: string, fn: (w: WorkoutRow) => WorkoutRow): Promise<void> {
+  const d = db
+  await d.transaction('rw', d.workouts, async () => {
+    const w = await d.workouts.get(workoutId)
     if (!w) return
-    const ex = w.exercises[exIdx]
-    const s = ex?.sets[setIdx]
-    if (!s) return
-    ex.sets[setIdx] = { ...s, ...patch, actual: { ...s.actual, ...(patch.actual ?? {}) } }
-    await db.workouts.put(w)
+    await d.workouts.put(fn(w))
+  })
+}
+
+/** Заметка к тренировке. */
+export async function setWorkoutNote(workoutId: string, note: string): Promise<void> {
+  await patchWorkout(workoutId, (w) => ({ ...w, note }))
+}
+
+/** Вес тела на эту тренировку (для отягощений и тоннажа). */
+export async function setWorkoutBodyweight(workoutId: string, bodyweight: number | null): Promise<void> {
+  await patchWorkout(workoutId, (w) => ({ ...w, bodyweight }))
+}
+
+/** Заметка к упражнению тренировки. */
+export async function setExerciseNote(workoutId: string, slotId: SlotId, note: string): Promise<void> {
+  await patchWorkout(workoutId, (w) => ({
+    ...w,
+    exercises: w.exercises.map((e) => (e.slotId === slotId ? { ...e, note } : e)),
+  }))
+}
+
+/** Добавить подход вручную в конец группы (копия последнего подхода группы, факт пустой). */
+export async function addExtraSet(workoutId: string, slotId: SlotId, groupId: string): Promise<void> {
+  await patchWorkout(workoutId, (w) => ({
+    ...w,
+    exercises: w.exercises.map((e) => {
+      if (e.slotId !== slotId) return e
+      const group = e.sets.filter((s) => s.groupId === groupId)
+      const last = group[group.length - 1]
+      if (!last) return e
+      const index = group.reduce((mx, s) => Math.max(mx, s.index), 0) + 1
+      const extra: WorkoutSet = {
+        ...last, index, driver: null, extra: true,
+        actual: { weight: null, reps: null, rpe: null }, done: false,
+      }
+      return { ...e, sets: [...e.sets, extra] }
+    }),
+  }))
+}
+
+/**
+ * Замена упражнения только в этой тренировке: меняем упражнение в записи тренировки,
+ * план для него — «подбор» (плановых весов не остаётся), программа не меняется.
+ */
+export async function swapExerciseForToday(workoutId: string, slotId: SlotId, exerciseId: string): Promise<void> {
+  const d = db
+  const p = await ensureProfile(d)
+  const cat = getExercise(exerciseId)
+  const step = p.steps[exerciseId] ?? cat.defaultStep
+  await patchWorkout(workoutId, (w) => ({
+    ...w,
+    exercises: w.exercises.map((e) => {
+      if (e.slotId !== slotId) return e
+      return {
+        ...e,
+        exerciseId: cat.id,
+        exerciseName: cat.name,
+        originalName: e.exerciseName,
+        loadType: cat.loadType,
+        step,
+        swappedForToday: true,
+        sets: e.sets.map((s) => ({
+          ...s,
+          driver: null,
+          planned: { ...s.planned, weight: null, text: 'подбор веса' },
+        })),
+      }
+    }),
+  }))
+}
+
+/** Изменить подход по адресу (слот + группа + номер): индексы массива могли сдвинуться (К3). */
+export async function updateSet(workoutId: string, addr: SetAddress, patch: Omit<Partial<WorkoutSet>, 'actual'> & { actual?: Partial<WorkoutSet['actual']> }): Promise<void> {
+  const d = db
+  await d.transaction('rw', d.workouts, async () => {
+    const w = await d.workouts.get(workoutId)
+    if (!w) return
+    const found = findSet(w, addr)
+    if (!found) return
+    const { exIndex, setIndex, set } = found
+    w.exercises[exIndex].sets[setIndex] = { ...set, ...patch, actual: { ...set.actual, ...(patch.actual ?? {}) } }
+    await d.workouts.put(w)
   })
 }
 
@@ -124,16 +224,19 @@ export async function updateSet(workoutId: string, exIdx: number, setIdx: number
  * Отметить подход выполненным. Читает свежую запись внутри транзакции (поле, из которого пользователь
  * только что ушёл, уже сохранено), пустые поля берёт из плана. Возвращает, чего не хватает.
  */
-export async function completeSet(workoutId: string, exIdx: number, setIdx: number): Promise<{ result: 'ok' | 'need-reps' | 'need-weight' | 'missing'; set?: WorkoutSet }> {
-  return db.transaction('rw', db.workouts, async () => {
-    const w = await db.workouts.get(workoutId)
-    const ex = w?.exercises[exIdx]
-    const s = ex?.sets[setIdx]
-    if (!w || !ex || !s) return { result: 'missing' as const }
+export async function completeSet(workoutId: string, addr: SetAddress): Promise<{ result: 'ok' | 'need-reps' | 'need-weight' | 'missing'; set?: WorkoutSet }> {
+  const d = db
+  return d.transaction('rw', d.workouts, async () => {
+    const w = await d.workouts.get(workoutId)
+    if (!w) return { result: 'missing' as const }
+    const found = findSet(w, addr)
+    if (!found) return { result: 'missing' as const }
+    const { exIndex, setIndex, set: s } = found
+    const ex = w.exercises[exIndex]
     if (s.done) {
-      ex.sets[setIdx] = { ...s, done: false }
-      await db.workouts.put(w)
-      return { result: 'ok' as const, set: ex.sets[setIdx] }
+      ex.sets[setIndex] = { ...s, done: false }
+      await d.workouts.put(w)
+      return { result: 'ok' as const, set: ex.sets[setIndex] }
     }
     const actual = { ...s.actual }
     if (actual.weight === null && s.planned.weight !== null && ex.loadType !== 'bodyweight') actual.weight = s.planned.weight
@@ -142,53 +245,58 @@ export async function completeSet(workoutId: string, exIdx: number, setIdx: numb
     if (ex.loadType !== 'bodyweight' && ex.loadType !== 'weighted_bodyweight' && (actual.weight === null || actual.weight <= 0)) {
       return { result: 'need-weight' as const, set: s }
     }
-    ex.sets[setIdx] = { ...s, done: true, actual }
-    await db.workouts.put(w)
-    return { result: 'ok' as const, set: ex.sets[setIdx] }
+    ex.sets[setIndex] = { ...s, done: true, actual }
+    await d.workouts.put(w)
+    return { result: 'ok' as const, set: ex.sets[setIndex] }
   })
 }
 
 export async function syncActiveWorkout(session: PlannedSession): Promise<void> {
-  await db.transaction('rw', db.workouts, async () => {
-    const w = await db.workouts.where('sessionId').equals(session.id).first()
+  const d = db
+  await d.transaction('rw', d.workouts, async () => {
+    const w = await d.workouts.where('sessionId').equals(session.id).first()
     if (!w || w.status !== 'active') return
     const next = refreshActiveWorkout(w, session)
-    if (JSON.stringify(next) !== JSON.stringify(w)) await db.workouts.put(next)
+    if (JSON.stringify(next) !== JSON.stringify(w)) await d.workouts.put(next)
   })
 }
 
 /** Завершить: сохраняются фактические значения и снимок плана; для тестовой недели — результаты теста. */
 export async function finishWorkout(workoutId: string, session: PlannedSession): Promise<{ testsSaved: number }> {
+  const d = db
   let testsSaved = 0
-  await db.transaction('rw', [db.workouts, db.tests, db.changes], async () => {
-    const w = await db.workouts.get(workoutId)
+  await d.transaction('rw', [d.workouts, d.tests, d.changes], async () => {
+    const w = await d.workouts.get(workoutId)
     if (!w) return
     const finished: WorkoutRow = { ...refreshActiveWorkout(w, session), status: 'done', finishedAt: now() }
-    await db.workouts.put(finished)
+    await d.workouts.put(finished)
     const tests = testsFromWorkout(finished)
-    for (const t of tests) await db.tests.put(t)
+    for (const t of tests) await d.tests.put(t)
     testsSaved = tests.length
-    await db.changes.add({ at: now(), kind: 'workout', text: `Завершена тренировка ${w.sessionId}${tests.length ? `, сохранено тестов: ${tests.length}` : ''}` })
+    await d.changes.add({ at: now(), kind: 'workout', text: `Завершена тренировка ${w.sessionId}${tests.length ? `, сохранено тестов: ${tests.length}` : ''}` })
   })
   return { testsSaved }
 }
 
 export async function reopenWorkout(workoutId: string): Promise<void> {
-  const other = await activeWorkout()
+  const d = db
+  const other = await d.workouts.where('status').equals('active').first()
   if (other && other.id !== workoutId) throw new Error('Сначала завершите начатую тренировку')
-  await db.workouts.update(workoutId, { status: 'active', finishedAt: undefined })
+  await d.workouts.update(workoutId, { status: 'active', finishedAt: undefined })
 }
 
 export async function deleteWorkout(workoutId: string): Promise<void> {
-  const w = await db.workouts.get(workoutId)
-  await db.workouts.delete(workoutId)
-  if (w) await logChange('workout', `Удалена запись тренировки ${w.sessionId}`)
+  const d = db
+  const w = await d.workouts.get(workoutId)
+  await d.workouts.delete(workoutId)
+  if (w) await logChangeIn(d, 'workout', `Удалена запись тренировки ${w.sessionId}`)
 }
 
 export async function resetAll(): Promise<void> {
-  await db.transaction('rw', [db.profile, db.bodyweights, db.tests, db.workouts, db.overrides, db.changes], async () => {
-    await Promise.all([db.profile.clear(), db.bodyweights.clear(), db.tests.clear(), db.workouts.clear(), db.overrides.clear(), db.changes.clear()])
+  const d = db
+  await d.transaction('rw', [d.profile, d.bodyweights, d.tests, d.workouts, d.overrides, d.changes], async () => {
+    await Promise.all([d.profile.clear(), d.bodyweights.clear(), d.tests.clear(), d.workouts.clear(), d.overrides.clear(), d.changes.clear()])
   })
-  await ensureProfile()
-  await logChange('reset', 'Все данные сброшены')
+  await ensureProfile(d)
+  await logChangeIn(d, 'reset', 'Все данные сброшены')
 }

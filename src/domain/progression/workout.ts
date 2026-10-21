@@ -22,6 +22,34 @@ export function plannedOf(g: PlannedGroup): WorkoutSet['planned'] {
   return { weight, reps, text }
 }
 
+/**
+ * Адрес подхода: слот (упражнение) + группа + номер внутри группы (+ признак «добавлен вручную»).
+ * Адрес не зависит от порядка упражнений и подходов в массиве — после пересчёта плана он остаётся верным.
+ */
+export interface SetAddress {
+  slotId: WorkoutExercise['slotId']
+  groupId: string
+  /** Номер подхода внутри группы, с 1. */
+  index: number
+  /** Подход добавлен вручную (не из плана). */
+  extra?: boolean
+}
+
+/** Адрес подхода по его месту в записи тренировки. */
+export function setAddress(ex: Pick<WorkoutExercise, 'slotId'>, s: Pick<WorkoutSet, 'groupId' | 'index' | 'extra'>): SetAddress {
+  return { slotId: ex.slotId, groupId: s.groupId, index: s.index, extra: !!s.extra }
+}
+
+/** Найти подход по адресу в актуальной записи тренировки (null — подхода нет). */
+export function findSet(w: Pick<WorkoutRow, 'exercises'>, addr: SetAddress): { exIndex: number; setIndex: number; set: WorkoutSet } | null {
+  const exIndex = w.exercises.findIndex((e) => e.slotId === addr.slotId)
+  if (exIndex < 0) return null
+  const sets = w.exercises[exIndex].sets
+  const setIndex = sets.findIndex((s) => s.groupId === addr.groupId && s.index === addr.index && !!s.extra === !!addr.extra)
+  if (setIndex < 0) return null
+  return { exIndex, setIndex, set: sets[setIndex] }
+}
+
 function setsFromGroup(g: PlannedGroup): WorkoutSet[] {
   const planned = plannedOf(g)
   return Array.from({ length: g.sets }, (_, i) => ({
@@ -67,13 +95,14 @@ export function newWorkout(session: PlannedSession, bodyweight: number | null, n
  * Обновить плановые значения активной тренировки по свежему плану (например, после ввода RPE
  * тяжёлого подхода — пересчитать подсобные). Фактические значения и отметки не трогаются.
  * Упражнение, у которого ещё нет выполненных подходов, заменяется, если в программе выбрано другое.
+ * Замена «только в этой тренировке» (swappedForToday) пересчётом не откатывается.
  */
 export function refreshActiveWorkout(w: WorkoutRow, session: PlannedSession): WorkoutRow {
   if (w.status !== 'active') return w
   const exercises: WorkoutExercise[] = []
   for (const p of session.exercises) {
     const cur = w.exercises.find((e) => e.slotId === p.slotId)
-    if (!cur || (cur.exerciseId !== p.exerciseId && !cur.sets.some((s) => s.done))) {
+    if (!cur || (cur.exerciseId !== p.exerciseId && !cur.swappedForToday && !cur.sets.some((s) => s.done))) {
       exercises.push(exerciseFromPlan(p))
       continue
     }

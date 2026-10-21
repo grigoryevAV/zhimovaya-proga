@@ -10,8 +10,8 @@ export interface Mismatch {
   what: 'weight' | 'sets' | 'reps'
 }
 
-export function compareScenario(cells: Cells): { compared: number; mismatches: Mismatch[]; engine: PlanEngine } {
-  const engine = new PlanEngine(inputFromScenario(cells))
+export function compareScenario(cells: Cells, fixedWorkbook = false): { compared: number; mismatches: Mismatch[]; engine: PlanEngine } {
+  const engine = new PlanEngine(inputFromScenario(cells, fixedWorkbook))
   const mismatches: Mismatch[] = []
   let compared = 0
   for (const w of WEEKS) {
