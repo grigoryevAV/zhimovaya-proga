@@ -3,6 +3,8 @@
 - Сайт: https://grigoryevav.github.io/zhimovaya-proga/
 - Репозиторий: https://github.com/grigoryevAV/zhimovaya-proga
 - Дата публикации: 12.10.2026
+- Папка проекта (с 22.10.2026): `C:\Users\ALEX\Desktop\Мешок ИИ\HERMES inf\Fitness program\zhimovaya-proga`
+  (из WSL: `/mnt/c/Users/ALEX/Desktop/Мешок ИИ/HERMES inf/Fitness program/zhimovaya-proga`). Приложение жены — соседняя папка `trenirovki-zheny`.
 - Ветка сайта: `gh-pages` — в её корне лежит содержимое папки `dist/` (сборка) и пустой файл `.nojekyll`
 - Ветка исходников: `main` — исходный код без `node_modules/`, `dist/`, `source/`, `*.xlsx` и `tsconfig.tsbuildinfo`
 
@@ -18,3 +20,5 @@
 - Публикация выполнена по заданию TASK-F001 (12.10.2026); токен доступа GitHub нигде не сохранён — ни в адресе remote, ни в файлах репозитория.
 - Обновление 12.10.2026: редизайн интерфейса
 - Обновление 21.10.2026: исправления экрана тренировки по аудиту
+- Обновление 22.10.2026: режим дня, питание-ориентир и велосипед
+- Обновление 22.10.2026: проект перенесён в папку zhimovaya-proga
