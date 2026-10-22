@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, ensureProfile, useDatabase } from '../src/storage/db'
 import { addBodyweight, saveTest } from '../src/storage/repo'
+import { today } from '../src/domain/format'
 import { App } from '../src/ui/App'
 
 beforeAll(() => {
@@ -143,5 +144,92 @@ describe('экраны на мобильной ширине', () => {
     })
     // план для заменённого упражнения — «подбор», без выдуманных весов
     expect((screen.getAllByLabelText('Сет 1: вес, кг', { selector: 'input' })[0] as HTMLInputElement).placeholder).toBe('подбор')
+  })
+})
+
+function shiftDate(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+describe('режим дня и питание: «Сегодня»', () => {
+  it('есть «Сейчас», цель дня и лента без мусорных значений', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 19, 12, 0, 0)) // понедельник: силовой день, Б 190
+    try {
+      render(<App />)
+      await screen.findByText('Начать тренировку')
+      expect(await screen.findByText('Сейчас')).toBeTruthy()
+      const body = document.body.textContent ?? ''
+      expect(body).toContain('ккал')
+      expect(body).toContain('Б 190')
+      expect(body).not.toMatch(BAD)
+      expect(screen.getByText('Начать тренировку')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('велодень: карточка велосипеда с разговорным темпом', async () => {    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 9, 20, 12, 0, 0)) // вторник, неделя велосипеда 1
+    try {
+      render(<App />)
+      await screen.findByText('Начать тренировку')
+      expect(await screen.findByText(/Велосипед: Z2 35 мин · разговорный темп, вентилятор/)).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('после полуночи «Сейчас» переходит на новый день без перезагрузки', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 9, 24, 23, 59, 0)) // суббота
+    try {
+      render(<App />)
+      await screen.findByText('Начать тренировку')
+      expect(document.body.textContent).toContain('Личное время')
+      act(() => {
+        vi.setSystemTime(new Date(2026, 9, 25, 0, 30, 0)) // воскресенье, 00:30
+        vi.advanceTimersByTime(60_000)
+      })
+      expect(screen.getByText('Личное время')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('одна неделя веса — подсказка «внесите вес»', async () => {
+    for (let i = 0; i < 7; i++) await addBodyweight(92, shiftDate(today(), -i))
+    render(<App />)
+    await screen.findByText(/внесите вес/i)
+  })
+
+  it('«Применить» меняет поправку только после нажатия', async () => {
+    for (let i = 0; i < 7; i++) await addBodyweight(91, shiftDate(today(), -i))
+    for (let i = 7; i < 14; i++) await addBodyweight(91.5, shiftDate(today(), -i))
+    render(<App />)
+    await screen.findByText('Применить')
+    expect((await db.profile.get('me'))!.nutritionAdjustKcal ?? 0).toBe(0)
+    fireEvent.click(screen.getByText('Применить'))
+    await waitFor(async () => expect((await db.profile.get('me'))!.nutritionAdjustKcal).toBe(150))
+    expect(document.body.textContent).not.toMatch(BAD)
+  })
+})
+
+describe('режим дня: «План → Неделя»', () => {
+  it('семь дней, цель понедельника, велосипед недели 1 и меню субботы', async () => {
+    render(<App />)
+    await screen.findByText('Начать тренировку')
+    await go('#/plan/routine')
+    await screen.findByText('неделя велосипеда 1 из 8')
+    for (const day of ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']) expect(screen.getByText(day)).toBeTruthy()
+    expect(screen.getByText('Пн').closest('button')!.textContent).toContain('2700 ккал')
+    expect(document.body.textContent).not.toMatch(BAD)
+    fireEvent.click(screen.getByText('Сб'))
+    await screen.findByText('Личное время')
+    expect((await screen.findAllByText(/Творог/)).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByText('Тренировки'))
+    await waitFor(() => expect(window.location.hash).toBe('#/plan'))
   })
 })

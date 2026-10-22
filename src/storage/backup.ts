@@ -62,6 +62,14 @@ export function validateBackup(raw: unknown): ValidateResult {
     if (!Array.isArray(data[key])) return { ok: false, error: `Повреждён раздел «${key}»` }
   }
   if (data.profile !== null && (!isObj(data.profile) || !isObj(data.profile.choices))) return { ok: false, error: 'Повреждён профиль' }
+  // необязательные поля питания: отсутствуют — норма, но если есть, должны быть корректными
+  const prof = data.profile as unknown as Record<string, unknown> | null
+  if (prof && prof.nutritionMode !== undefined && prof.nutritionMode !== 'recomp' && prof.nutritionMode !== 'maintenance') {
+    return { ok: false, error: 'Повреждён профиль: неизвестный режим питания' }
+  }
+  if (prof && prof.nutritionAdjustKcal !== undefined && !(typeof prof.nutritionAdjustKcal === 'number' && Number.isFinite(prof.nutritionAdjustKcal))) {
+    return { ok: false, error: 'Повреждён профиль: поправка калорий не число' }
+  }
   for (const b of data.bodyweights) {
     if (!isObj(b) || typeof b.date !== 'string' || typeof b.kg !== 'number' || !(b.kg > 0)) return { ok: false, error: 'Повреждена запись веса тела' }
   }

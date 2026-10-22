@@ -3,7 +3,7 @@ import { fmtDate, fmtKg, today } from '../../domain/format'
 import { ALGORITHM_VERSION } from '../../domain/program/engine'
 import { type ValidateResult, downloadText, exportBackup, importBackup, parseBackupText, workoutsToCsv } from '../../storage/backup'
 import { SCHEMA_VERSION } from '../../storage/db'
-import { addBodyweight, deleteBodyweight, resetAll, updateProfile } from '../../storage/repo'
+import { addBodyweight, deleteBodyweight, resetAll, resetNutritionAdjust, setNutritionMode, updateProfile } from '../../storage/repo'
 import { ConfirmSheet, Icon, NumberField, useToast } from '../components'
 import { useData } from '../data'
 import { back } from '../nav'
@@ -53,6 +53,21 @@ export function SettingsScreen() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h3>Питание</h3>
+        <p className="small muted">Мягкая рекомпозиция — небольшой дефицит, сила растёт, жир уходит. Поддержание — на неделях разгрузки и по желанию.</p>
+        <div className="seg" role="group" aria-label="Режим питания">
+          <button aria-pressed={(d.profile.nutritionMode ?? 'recomp') === 'recomp'} onClick={() => setNutritionMode('recomp')}>Мягкая рекомпозиция</button>
+          <button aria-pressed={d.profile.nutritionMode === 'maintenance'} onClick={() => setNutritionMode('maintenance')}>Поддержание</button>
+        </div>
+        <div className="row between">
+          <span className="small">Поправка: {(d.profile.nutritionAdjustKcal ?? 0) >= 0 ? '+' : ''}{d.profile.nutritionAdjustKcal ?? 0} ккал</span>
+          <button className="btn sm tap44" disabled={(d.profile.nutritionAdjustKcal ?? 0) === 0} onClick={() => resetNutritionAdjust()}>Сбросить</button>
+        </div>
+        <p className="small muted">Недели 4/8/12 — поддержание автоматически.</p>
+        <p className="tiny faint">Цифры — ориентир, не медицинская рекомендация.</p>
       </div>
 
       <div className="card">

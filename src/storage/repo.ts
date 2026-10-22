@@ -3,6 +3,7 @@ import { getExercise } from '../domain/exercises/catalog'
 import { fmtKg, today } from '../domain/format'
 import { type SlotId, getSlot } from '../domain/program/definition'
 import type { PlannedSession } from '../domain/program/engine'
+import type { NutritionMode } from '../domain/routine/nutrition'
 import { type SetAddress, findSet, newWorkout, refreshActiveWorkout, testsFromWorkout } from '../domain/progression/workout'
 import { type AppDB, db, ensureProfile } from './db'
 import type { ChangeRow, OverrideRow, ProfileRow, TestRow, WorkoutRow, WorkoutSet } from './types'
@@ -58,6 +59,30 @@ export async function setSchemeRow(exerciseId: string, row: number, label: strin
     { schemeRows: { ...(await ensureProfile()).schemeRows, [exerciseId]: row } },
     { kind: 'scheme', text: `Рабочий диапазон «${getExercise(exerciseId).name}»: ${label}` },
   )
+}
+
+// ------------------------------------------------ питание
+
+export async function setNutritionMode(mode: NutritionMode): Promise<void> {
+  await updateProfile(
+    { nutritionMode: mode },
+    { kind: 'settings', text: `Режим питания: ${mode === 'maintenance' ? 'поддержание' : 'мягкая рекомпозиция'}` },
+  )
+}
+
+/** Поправка к цели дня прибавляется к текущей (нажатие «Применить» в подсказке тренда). */
+export async function applyNutritionAdvice(deltaKcal: number, reason: string): Promise<void> {
+  const d = db
+  await d.transaction('rw', [d.profile, d.changes], async () => {
+    const p = await ensureProfile(d)
+    const next = (p.nutritionAdjustKcal ?? 0) + deltaKcal
+    await d.profile.put({ ...p, nutritionAdjustKcal: next, id: 'me', updatedAt: now() })
+    await logChangeIn(d, 'settings', `${deltaKcal > 0 ? '+' : ''}${deltaKcal} ккал к цели питания: ${reason}`)
+  })
+}
+
+export async function resetNutritionAdjust(): Promise<void> {
+  await updateProfile({ nutritionAdjustKcal: 0 }, { kind: 'settings', text: 'Поправка питания сброшена' })
 }
 
 export async function addBodyweight(kg: number, date = today()): Promise<void> {

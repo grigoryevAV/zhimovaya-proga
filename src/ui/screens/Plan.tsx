@@ -6,6 +6,7 @@ import { clearOverride, setOverride, startWorkout } from '../../storage/repo'
 import { NumberField, Sheet, useToast } from '../components'
 import { useData } from '../data'
 import { go } from '../nav'
+import { RoutineWeek } from '../routine/RoutineWeek'
 import { Cell, GridHeader, PlanGroupRow, groupHeadline, weightCaption } from '../setGrid'
 
 export function parseWeek(s: string | undefined): WeekId | null {
@@ -18,6 +19,7 @@ export function parseWeek(s: string | undefined): WeekId | null {
 export function PlanScreen({ week }: { week?: string }) {
   const d = useData()
   const toast = useToast()
+  const routine = week === 'routine'
   const selected = parseWeek(week) ?? d.next?.week ?? 'P1'
   const [edit, setEdit] = useState<{ g: PlannedGroup; e: PlannedExercise } | null>(null)
   const sessions = d.sessions.filter((s) => s.week === selected)
@@ -26,6 +28,12 @@ export function PlanScreen({ week }: { week?: string }) {
   return (
     <div className="screen">
       <div className="screen-head"><h1>План</h1></div>
+      <div className="seg" role="group" aria-label="Раздел плана">
+        <button aria-pressed={!routine} onClick={() => go('plan')}>Тренировки</button>
+        <button aria-pressed={routine} onClick={() => go('plan/routine')}>Неделя</button>
+      </div>
+      {routine ? <RoutineWeek /> : (
+        <>
       <div className="chips" role="tablist" aria-label="Недели">
         {WEEKS.map((w) => {
           const done = d.sessions.filter((s) => s.week === w).every((s) => d.workoutBySession.get(s.id)?.status === 'done')
@@ -103,6 +111,8 @@ export function PlanScreen({ week }: { week?: string }) {
       })}
 
       <OverrideSheet edit={edit} onClose={() => setEdit(null)} />
+        </>
+      )}
     </div>
   )
 }

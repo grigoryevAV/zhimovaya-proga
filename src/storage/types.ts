@@ -1,6 +1,7 @@
 /** Записи локальной базы (IndexedDB). Версия схемы — SCHEMA_VERSION в db.ts. */
 import type { LoadType } from '../domain/exercises/catalog'
 import type { Day, SlotId, WeekId } from '../domain/program/definition'
+import type { NutritionMode } from '../domain/routine/nutrition'
 
 export type Theme = 'dark' | 'light'
 
@@ -17,6 +18,10 @@ export interface ProfileRow {
   restMediumSec: number
   restLightSec: number
   warmup: { bench: number | null; deadlift: number | null }
+  /** Режим питания; нет поля — «мягкая рекомпозиция». */
+  nutritionMode?: NutritionMode
+  /** Поправка к цели дня, ккал; нет поля — 0. */
+  nutritionAdjustKcal?: number
   createdAt: string
   updatedAt: string
 }

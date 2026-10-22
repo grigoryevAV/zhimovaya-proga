@@ -6,7 +6,8 @@ import { type SetAddress, refreshActiveWorkout, testsFromWorkout } from '../src/
 import { exportBackup, importBackup, parseBackupText, validateBackup, workoutsToCsv } from '../src/storage/backup'
 import { AppDB, SCHEMA_VERSION, db, ensureProfile, useDatabase } from '../src/storage/db'
 import {
-  addBodyweight, addExtraSet, finishWorkout, saveTest, setChoice, setExerciseNote, setOverride, setStep,
+  addBodyweight, addExtraSet, applyNutritionAdvice, finishWorkout, resetNutritionAdjust, saveTest, setChoice,
+  setExerciseNote, setNutritionMode, setOverride, setStep,
   setWorkoutBodyweight, setWorkoutNote, startWorkout, swapExerciseForToday, updateSet,
 } from '../src/storage/repo'
 import type { SlotId } from '../src/domain/program/definition'
@@ -288,5 +289,67 @@ describe('Д8 — замена упражнения только в текуще
     const refreshed = refreshActiveWorkout((await db.workouts.get(w.id))!, (await engine()).session(1, 1))
     expect(refreshed.exercises.find((x) => x.slotId === 'd1s1')!.exerciseId).toBe('incline_bench')
     expect(refreshed.exercises.find((x) => x.slotId === 'd1s1')!.swappedForToday).toBeUndefined()
+  })
+})
+
+// ------------------------------------------------ питание: профиль и поправка
+
+describe('питание: режим и поправка в профиле', () => {
+  it('поправка накапливается, каждая запись — в журнале «settings»', async () => {
+    await applyNutritionAdvice(150, 'темп быстрее −0,4 кг/нед')
+    await applyNutritionAdvice(150, 'тест повторного нажатия')
+    expect((await db.profile.get('me'))!.nutritionAdjustKcal).toBe(300)
+    expect(await db.changes.filter((c) => c.kind === 'settings').count()).toBe(2)
+  })
+
+  it('одновременные «Применить» не теряют поправку', async () => {
+    await Promise.all([applyNutritionAdvice(150, 'первое'), applyNutritionAdvice(150, 'второе')])
+    expect((await db.profile.get('me'))!.nutritionAdjustKcal).toBe(300)
+    expect(await db.changes.filter((c) => c.kind === 'settings').count()).toBe(2)
+  })
+
+  it('сброс обнуляет поправку и пишет в журнал', async () => {
+    await applyNutritionAdvice(200, 'сила просела')
+    await resetNutritionAdjust()
+    expect((await db.profile.get('me'))!.nutritionAdjustKcal).toBe(0)
+    expect(await db.changes.filter((c) => c.kind === 'settings').count()).toBe(2)
+  })
+
+  it('режим питания сохраняется в профиле', async () => {
+    await setNutritionMode('maintenance')
+    expect((await db.profile.get('me'))!.nutritionMode).toBe('maintenance')
+    await setNutritionMode('recomp')
+    expect((await db.profile.get('me'))!.nutritionMode).toBe('recomp')
+    expect(await db.changes.filter((c) => c.kind === 'settings').count()).toBe(2)
+  })
+
+  it('копия без полей питания проходит проверку и импортируется как recomp/0', async () => {
+    await applyNutritionAdvice(150, 'перед экспортом')
+    const file = await exportBackup()
+    const legacyProfile: Record<string, unknown> = { ...file.data.profile }
+    delete legacyProfile.nutritionMode
+    delete legacyProfile.nutritionAdjustKcal
+    const parsed = validateBackup({ ...file, data: { ...file.data, profile: legacyProfile } })
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    useDatabase(`legacy-nutrition-${Math.random()}`)
+    await ensureProfile()
+    await importBackup(parsed.file)
+    const p = (await db.profile.get('me'))!
+    expect(p.nutritionMode ?? 'recomp').toBe('recomp')
+    expect(p.nutritionAdjustKcal ?? 0).toBe(0)
+  })
+})
+
+describe('резервная копия: поля питания в профиле', () => {
+  const base = { app: 'zhimovaya-proga', schemaVersion: 1, exportedAt: '2026-10-22', algorithmVersion: '1', data: { bodyweights: [], tests: [], workouts: [], overrides: [], changes: [] } }
+  const prof = (extra: Record<string, unknown>) => ({ ...base, data: { ...base.data, profile: { id: 'me', choices: {}, ...extra } } })
+  it('без полей и с корректными полями — копия принимается', () => {
+    expect(validateBackup(prof({})).ok).toBe(true)
+    expect(validateBackup(prof({ nutritionMode: 'maintenance', nutritionAdjustKcal: -150 })).ok).toBe(true)
+  })
+  it('битые поля — понятная ошибка вместо NaN на экране', () => {
+    expect(validateBackup(prof({ nutritionMode: 'diet' }))).toMatchObject({ ok: false, error: expect.stringContaining('режим питания') })
+    expect(validateBackup(prof({ nutritionAdjustKcal: 'сто' }))).toMatchObject({ ok: false, error: expect.stringContaining('поправка') })
   })
 })

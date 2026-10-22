@@ -1,16 +1,35 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { fmtKg, groupText, today } from '../../domain/format'
 import { mesocycleOf, weekLabel } from '../../domain/program/definition'
 import { sessionIssues } from '../../domain/program/engine'
+import { advice } from '../../domain/routine/trend'
 import { addBodyweight, startWorkout, updateProfile } from '../../storage/repo'
 import { Icon, NumberField, useToast } from '../components'
 import { ORDER, useData } from '../data'
 import { go } from '../nav'
+import { DayTargetCard } from '../routine/DayTargetCard'
+import { DayTimeline } from '../routine/DayTimeline'
+import { NowNext } from '../routine/NowNext'
+import { TrendAdviceCard } from '../routine/TrendAdviceCard'
+import { programWeekOf, useDayPlan } from '../routine/useDayPlan'
 
 export function TodayScreen() {
   const d = useData()
   const toast = useToast()
   const [bw, setBw] = useState<number | null>(null)
+  const [planDate, setPlanDate] = useState(() => new Date())
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const next = new Date()
+      setPlanDate((prev) => (prev.toDateString() === next.toDateString() ? prev : next))
+    }, 60_000)
+    return () => window.clearInterval(id)
+  }, [])
+  const plan = useDayPlan(planDate)
+  const prevDate = new Date(planDate)
+  prevDate.setDate(planDate.getDate() - 1)
+  const prevPlan = useDayPlan(prevDate)
+  const trend = advice(d.bodyweights, d.workouts, today(), programWeekOf(d))
   const session = d.active ? d.sessions.find((s) => s.id === d.active!.sessionId) : d.next
   const needsBw = Object.values(d.profile.choices).some((c) => c === 'pullup_weighted')
   // недостающее, что заполняется по ходу этой же тренировки (RPE первого подхода и т. п.), не показываем
@@ -39,6 +58,19 @@ export function TodayScreen() {
           {d.profile.theme === 'dark' ? <Icon.sun /> : <Icon.moon />}
         </button>
       </div>
+
+      <NowNext plan={plan} prevPlan={prevPlan} />
+      <DayTimeline items={plan.items} />
+      <DayTargetCard plan={plan} />
+      {plan.bike && (
+        <div className="card">
+          <div className="row between">
+            <h3>Велосипед</h3>
+            <span className="badge info num">{plan.bike.minutes} мин</span>
+          </div>
+          <p className="small">Велосипед: {plan.bike.label} · разговорный темп, вентилятор</p>
+        </div>
+      )}
 
       {session ? (
         <div className="card hero">
@@ -112,6 +144,7 @@ export function TodayScreen() {
           >Сохранить</button>
         </div>
         <span className="tiny faint">Новый вес влияет на будущие расчёты. Записанные тренировки хранят вес тела на свой день и не пересчитываются.</span>
+        <TrendAdviceCard advice={trend} />
       </div>
     </div>
   )
